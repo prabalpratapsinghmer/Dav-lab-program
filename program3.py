@@ -86,7 +86,7 @@ plt.figure(figsize=(8,6))
 sns.heatmap(
     correlation,
     annot=True,
-    Cmap="coolwarm",
+    cmap="coolwarm",
     fmt=".2f"
 )
 
