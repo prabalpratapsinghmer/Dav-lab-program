@@ -1,112 +1,195 @@
-# 1. Import libraries
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
+from sklearn.linear_model import LogisticRegression
 
+# Decision Tree imports
+from sklearn.tree import DecisionTreeClassifier, plot_tree, export_text
 
-# 2. Load dataset
-df = pd.read_csv("/home/prabal/Mall_Customers.csv")
+# Evaluation metrics
+from sklearn.metrics import (
+    confusion_matrix,
+    classification_report,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score
+)
 
-print("Dataset shape:", df.shape)
+# ------------------------------------------------------------
+# 1. LOAD + INSPECT
+# ------------------------------------------------------------
+
+df = pd.read_csv(r"C:\Users\User\Downloads\archive (8)\heart.csv")
+
+print(df.shape)
 print(df.head())
-print(df.describe())
-print("Missing values:\n", df.isnull().sum())
+print(df.info())
+print("\nMissing values:", df.isnull().sum().sum())
+
+print("\nClass balance (1 = heart disease):\n",
+      df["HeartDisease"].value_counts())
 
 
-# 3. Select features
-features = ["Annual Income (k$)", "Spending Score (1-100)"]
+# ------------------------------------------------------------
+# 2. PREPARE DATA
+# ------------------------------------------------------------
 
-# Remove rows with missing feature values
-df = df.dropna(subset=features).copy()
+cat_columns = ["Sex", "ChestPainType", "RestingECG",
+               "ExerciseAngina", "ST_Slope"]
 
-X = df[features]
+# Text columns (Sex, ChestPainType, RestingECG, ExerciseAngina, ST_Slope)
+# must become numbers. One-hot encoding makes one 0/1 column per category.
 
+df = pd.get_dummies(df, drop_first=True, dtype=int)
 
-# 4. Standardize the data
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+X = df.drop(columns="HeartDisease")
+y = df["HeartDisease"]
 
-
-# 5. Elbow Method and Silhouette Score
-k_values = range(2, 11)
-
-inertias = []
-silhouettes = []
-
-for k in k_values:
-    km = KMeans(n_clusters=k, n_init=10, random_state=42)
-    km.fit(X_scaled)
-
-    inertias.append(km.inertia_)
-    silhouettes.append(silhouette_score(X_scaled, km.labels_))
-
-    print(f"K={k:2d}  Inertia={km.inertia_:8.2f}  Silhouette={silhouettes[-1]:.3f}")
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
 
 
-# 6. Plot Elbow and Silhouette graphs
-fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+# ------------------------------------------------------------
+# 3. TREE 1: NO LIMITS (grows until every leaf is pure -> overfits)
+# ------------------------------------------------------------
 
-ax[0].plot(list(k_values), inertias, marker="o")
-ax[0].set_xlabel("Number of Clusters (K)")
-ax[0].set_ylabel("Inertia (WCSS)")
-ax[0].set_title("Elbow Method")
+full_tree = DecisionTreeClassifier(random_state=42)
+full_tree.fit(X_train, y_train)
 
-ax[1].plot(list(k_values), silhouettes, marker="o", color="green")
-ax[1].set_xlabel("Number of Clusters (K)")
-ax[1].set_ylabel("Silhouette Score")
-ax[1].set_title("Silhouette Method")
+print("\n=== UNRESTRICTED TREE ===")
+print("Depth       :", full_tree.get_depth())
+print("Leaves      :", full_tree.get_n_leaves())
+print("Train acc   :", round(full_tree.score(X_train, y_train), 4))
+print("Test acc    :", round(full_tree.score(X_test, y_test), 4))
 
+# -----------------------------------------------
+# 4. FIND A GOOD max_depth (train vs test accuracy curve)
+# -----------------------------------------------
+
+depths = range(1, 16)
+train_acc, test_acc = [], []
+
+for d in depths:
+    t = DecisionTreeClassifier(max_depth=d, random_state=42).fit(X_train, y_train)
+    train_acc.append(t.score(X_train, y_train))
+    test_acc.append(t.score(X_test, y_test))
+
+plt.figure(figsize=(7, 4))
+plt.plot(depths, train_acc, marker="o", label="Train accuracy")
+plt.plot(depths, test_acc, marker="o", label="Test accuracy")
+
+plt.xlabel("max_depth")
+plt.ylabel("Accuracy")
+plt.title("Overfitting check: train vs test accuracy")
+plt.legend()
 plt.tight_layout()
+
+plt.savefig("depth_vs_accuracy.png")
+plt.show()
+
+# -----------------------------------------------
+#5. TREE 2: PRUNED TREE (controlled complexity)
+# -----------------------------------------------
+tree = DecisionTreeClassifier(
+    criterion="gini",
+    max_depth=3,
+    min_samples_leaf=10, # at most 3 questions deep
+    random_state=42# every leaf must contain at least 10 patients
+)
+tree.fit(X_train, y_train)
+
+# -----------------------------------------------
+# 6. EVALUATE
+# -----------------------------------------------
+
+y_pred = tree.predict(X_test)
+
+cm = confusion_matrix(y_test, y_pred)
+tn, fp, fn, tp = cm.ravel()
+
+print("\n=== PRUNED TREE (max_depth=3) ===")
+print("Confusion matrix:\n", cm)
+print(f"TN={tn} FP={fp} FN={fn} TP={tp}")
+
+print("Train acc  :", round(tree.score(X_train, y_train), 4))
+print("Test acc   :", round(accuracy_score(y_test, y_pred), 4))
+print("Precision  :", round(precision_score(y_test, y_pred), 4))
+print("Recall     :", round(recall_score(y_test, y_pred), 4))
+print("F1-score   :", round(f1_score(y_test, y_pred), 4))
+
+print("\n", classification_report(
+    y_test,
+    y_pred,
+    target_names=["No disease", "Disease"]
+))
+
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Confusion Matrix")
+plt.show()
+
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm,annot=True,fmt="d",cmap="Blues",
+    xticklabels=["Pred No", "Pred Yes"],
+    yticklabels=["Actual No", "Actual Yes"]
+)
+
+plt.title("Confusion Matrix (pruned tree)")
+plt.tight_layout()
+plt.savefig("confusion_matrix.png")
 plt.show()
 
 
-# 7. Apply K-Means Clustering
-best_k = 5
+# -----------------------------------------------
+# 7. VISUALIZE THE TREE
+# -----------------------------------------------
 
-kmeans = KMeans(n_clusters=best_k, n_init=10, random_state=42)
+plt.figure(figsize=(20, 9))
 
-df["Cluster"] = kmeans.fit_predict(X_scaled)
-
-print("\nCustomers per cluster:")
-print(df["Cluster"].value_counts().sort_index())
-
-print("Final Silhouette Score:",
-      round(silhouette_score(X_scaled, df["Cluster"]), 3))
-
-
-# 8. Calculate centroids
-centroids = scaler.inverse_transform(kmeans.cluster_centers_)
-
-
-# 9. Visualize clusters
-plt.figure(figsize=(8, 6))
-
-sns.scatterplot(
-    data=df,
-    x=features[0],
-    y=features[1],
-    hue="Cluster",
-    palette="tab10",
-    s=70
+plot_tree(
+    tree,
+    feature_names=X.columns,
+    class_names=["No disease", "Disease"],
+    filled=True,       # colour by majority class
+    rounded=True,
+    fontsize=10
 )
 
-plt.scatter(
-    centroids[:, 0],
-    centroids[:, 1],
-    marker="X",
-    s=250,
-    c="black",
-    label="Centroids"
-)
-
-plt.xlabel("Annual Income (k$)")
-plt.ylabel("Spending Score (1-100)")
-plt.title(f"K-Means Customer Segmentation (K={best_k})")
-plt.legend()
+plt.title("Pruned Decision Tree")
 plt.tight_layout()
+plt.savefig("pruned_tree.png")
+plt.show()
+
+# The same tree as plain-text if/else rules
+
+print("\nTree as text rules:\n")
+print(export_text(tree, feature_names=list(X.columns)))
+
+# -----------------------------------------------
+# 8. FEATURE IMPORTANCE
+# -----------------------------------------------
+
+imp = pd.Series(
+    tree.feature_importances_,
+    index=X.columns
+).sort_values(ascending=False)
+
+print("\nFeature importances:\n", imp[imp > 0])
+
+plt.figure(figsize=(7, 4))
+imp[imp > 0].sort_values().plot(kind="barh")
+
+plt.title("Feature importance")
+plt.tight_layout()
+plt.savefig("feature_importance.png")
 plt.show()
