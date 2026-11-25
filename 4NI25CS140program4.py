@@ -11,7 +11,7 @@ print("\nShape of dataset:")
 print(df.shape)
 
 print("\nData information:")
-print(df.info())
+df.info()
 
 print("\nColumn names:")
 print(df.columns.tolist())

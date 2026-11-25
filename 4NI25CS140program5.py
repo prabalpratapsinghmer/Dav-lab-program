@@ -38,7 +38,7 @@ print("number of iqr outliers:", len(iqr_outliers))
 mean = data.mean()
 std = data.std()
 
-df["z_score"] = (df["math score"] - mean) / std  # FIXED: use underscore consistently
+df["z_score"] = (df["math score"] - mean) / std
 z_outliers = df[abs(df["z_score"]) > 3]
 
 print("\nz method")
@@ -55,11 +55,11 @@ else:
 
 print("\nz score outliers")
 if len(z_outliers) > 0:
-    print(z_outliers[["math score", "z_score"]])  # FIXED: column name
+    print(z_outliers[["math score", "z_score"]])
 else:
     print("no z score outliers found")
 
-# Treatment: capping using IQR limits
+# Cap outliers using IQR limits
 df["math_score_treated"] = df["math score"].clip(lower=lower, upper=upper)
 
 print("\ntreatment method: capping using iqr limits:")

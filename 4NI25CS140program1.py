@@ -1,4 +1,4 @@
-#introduction to python for data analytics suing numpy , pandas , basic array operation , indexing , slicing and dataframe creation
+# NumPy and Pandas basics
 import numpy as np
 import pandas as pd
 arr=np.array([10,20,30,40,50])
